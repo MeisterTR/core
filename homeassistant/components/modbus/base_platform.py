@@ -22,6 +22,7 @@ from homeassistant.const import (
     CONF_STRUCTURE,
     CONF_UNIQUE_ID,
     STATE_ON,
+    STATE_UNAVAILABLE,
 )
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -44,6 +45,9 @@ from .const import (
     CONF_DATA_TYPE,
     CONF_INPUT_TYPE,
     CONF_LAZY_ERROR,
+    CONF_MAX_VALUE,
+    CONF_MIN_VALUE,
+    CONF_NAN_VALUE,
     CONF_PRECISION,
     CONF_SCALE,
     CONF_STATE_OFF,
@@ -54,6 +58,7 @@ from .const import (
     CONF_SWAP_WORD_BYTE,
     CONF_VERIFY,
     CONF_WRITE_TYPE,
+    CONF_ZERO_SUPPRESS,
     SIGNAL_START_ENTITY,
     SIGNAL_STOP_ENTITY,
     DataType,
@@ -70,10 +75,6 @@ class BasePlatform(Entity):
     def __init__(self, hub: ModbusHub, entry: dict[str, Any]) -> None:
         """Initialize the Modbus binary sensor."""
         self._hub = hub
-        # temporary fix,
-        # make sure slave is always defined to avoid an error in pymodbus
-        # attr(in_waiting) not defined.
-        # see issue #657 and PR #660 in riptideio/pymodbus
         self._slave = entry.get(CONF_SLAVE, 0)
         self._address = int(entry[CONF_ADDRESS])
         self._input_type = entry[CONF_INPUT_TYPE]
@@ -91,6 +92,19 @@ class BasePlatform(Entity):
         self._attr_unit_of_measurement = None
         self._lazy_error_count = entry[CONF_LAZY_ERROR]
         self._lazy_errors = self._lazy_error_count
+
+        def get_optional_numeric_config(config_name: str) -> int | float | None:
+            if (val := entry.get(config_name)) is None:
+                return None
+            assert isinstance(
+                val, (float, int)
+            ), f"Expected float or int but {config_name} was {type(val)}"
+            return val
+
+        self._min_value = get_optional_numeric_config(CONF_MIN_VALUE)
+        self._max_value = get_optional_numeric_config(CONF_MAX_VALUE)
+        self._nan_value = entry.get(CONF_NAN_VALUE, None)
+        self._zero_suppress = get_optional_numeric_config(CONF_ZERO_SUPPRESS)
 
     @abstractmethod
     async def async_update(self, now: datetime | None = None) -> None:
@@ -162,6 +176,19 @@ class BaseStructPlatform(BasePlatform, RestoreEntity):
             registers.reverse()
         return registers
 
+    def __process_raw_value(self, entry: float | int | str) -> float | int | str:
+        """Process value from sensor with NaN handling, scaling, offset, min/max etc."""
+        if self._nan_value and entry in (self._nan_value, -self._nan_value):
+            return STATE_UNAVAILABLE
+        val: float | int = self._scale * entry + self._offset
+        if self._min_value is not None and val < self._min_value:
+            return self._min_value
+        if self._max_value is not None and val > self._max_value:
+            return self._max_value
+        if self._zero_suppress is not None and abs(val) <= self._zero_suppress:
+            return 0
+        return val
+
     def unpack_structure_result(self, registers: list[int]) -> str | None:
         """Convert registers to proper result."""
 
@@ -181,28 +208,39 @@ class BaseStructPlatform(BasePlatform, RestoreEntity):
         # If unpack() returns a tuple greater than 1, don't try to process the value.
         # Instead, return the values of unpack(...) separated by commas.
         if len(val) > 1:
-            # Apply scale and precision to floats and ints
+            # Apply scale, precision, limits to floats and ints
             v_result = []
             for entry in val:
-                v_temp = self._scale * entry + self._offset
+                v_temp = self.__process_raw_value(entry)
 
                 # We could convert int to float, and the code would still work; however
                 # we lose some precision, and unit tests will fail. Therefore, we do
                 # the conversion only when it's absolutely necessary.
                 if isinstance(v_temp, int) and self._precision == 0:
                     v_result.append(str(v_temp))
+                elif v_temp != v_temp:  # noqa: PLR0124
+                    # NaN float detection replace with None
+                    v_result.append("nan")  # pragma: no cover
                 else:
                     v_result.append(f"{float(v_temp):.{self._precision}f}")
             return ",".join(map(str, v_result))
 
-        # Apply scale and precision to floats and ints
-        val_result: float | int = self._scale * val[0] + self._offset
+        # Apply scale, precision, limits to floats and ints
+        val_result = self.__process_raw_value(val[0])
 
         # We could convert int to float, and the code would still work; however
         # we lose some precision, and unit tests will fail. Therefore, we do
         # the conversion only when it's absolutely necessary.
+
+        # NaN float detection replace with None
+        if val_result != val_result:  # noqa: PLR0124
+            return None  # pragma: no cover
         if isinstance(val_result, int) and self._precision == 0:
             return str(val_result)
+        if isinstance(val_result, str):
+            if val_result == "nan":
+                val_result = STATE_UNAVAILABLE  # pragma: no cover
+            return val_result
         return f"{float(val_result):.{self._precision}f}"
 
 
@@ -261,7 +299,7 @@ class BaseSwitch(BasePlatform, ToggleEntity, RestoreEntity):
 
     async def async_turn(self, command: int) -> None:
         """Evaluate switch result."""
-        result = await self._hub.async_pymodbus_call(
+        result = await self._hub.async_pb_call(
             self._slave, self._address, command, self._write_type
         )
         if result is None:
@@ -297,7 +335,7 @@ class BaseSwitch(BasePlatform, ToggleEntity, RestoreEntity):
         if self._call_active:
             return
         self._call_active = True
-        result = await self._hub.async_pymodbus_call(
+        result = await self._hub.async_pb_call(
             self._slave, self._verify_address, 1, self._verify_type
         )
         self._call_active = False

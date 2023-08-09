@@ -93,6 +93,7 @@ class AirConEntity(ClimateEntity):
 
     _attr_fan_modes = SUPPORTED_FAN_MODES
     _attr_has_entity_name = True
+    _attr_name = None
     _attr_hvac_modes = SUPPORTED_HVAC_MODES
     _attr_max_temp = SUPPORTED_MAX_TEMP
     _attr_min_temp = SUPPORTED_MIN_TEMP
@@ -108,13 +109,13 @@ class AirConEntity(ClimateEntity):
 
     def __init__(
         self,
-        hass,
-        said,
-        name,
+        hass: HomeAssistant,
+        said: str,
+        name: str | None,
         backend_selector: BackendSelector,
         auth: Auth,
         session: ClientSession,
-    ):
+    ) -> None:
         """Initialize the entity."""
         self._aircon = Aircon(backend_selector, auth, said, session)
         self.entity_id = generate_entity_id(ENTITY_ID_FORMAT, said, hass=hass)

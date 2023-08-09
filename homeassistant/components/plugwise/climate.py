@@ -39,9 +39,10 @@ async def async_setup_entry(
 
 
 class PlugwiseClimateEntity(PlugwiseEntity, ClimateEntity):
-    """Representation of an Plugwise thermostat."""
+    """Representation of a Plugwise thermostat."""
 
     _attr_has_entity_name = True
+    _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_translation_key = DOMAIN
 
@@ -122,19 +123,20 @@ class PlugwiseClimateEntity(PlugwiseEntity, ClimateEntity):
         # When control_state is present, prefer this data
         if (control_state := self.device.get("control_state")) == "cooling":
             return HVACAction.COOLING
-        # Support preheating state as heating, until preheating is added as a separate state
+        # Support preheating state as heating,
+        # until preheating is added as a separate state
         if control_state in ["heating", "preheating"]:
             return HVACAction.HEATING
         if control_state == "off":
             return HVACAction.IDLE
 
-        hc_data = self.coordinator.data.devices[
-            self.coordinator.data.gateway["heater_id"]
-        ]
-        if hc_data["binary_sensors"]["heating_state"]:
-            return HVACAction.HEATING
-        if hc_data["binary_sensors"].get("cooling_state"):
-            return HVACAction.COOLING
+        heater: str | None = self.coordinator.data.gateway["heater_id"]
+        if heater:
+            heater_data = self.coordinator.data.devices[heater]
+            if heater_data["binary_sensors"]["heating_state"]:
+                return HVACAction.HEATING
+            if heater_data["binary_sensors"].get("cooling_state"):
+                return HVACAction.COOLING
 
         return HVACAction.IDLE
 
@@ -148,7 +150,7 @@ class PlugwiseClimateEntity(PlugwiseEntity, ClimateEntity):
         """Return entity specific state attributes."""
         return {
             "available_schemas": self.device["available_schedules"],
-            "selected_schema": self.device["selected_schedule"],
+            "selected_schema": self.device["select_schedule"],
         }
 
     @plugwise_command

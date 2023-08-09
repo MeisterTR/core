@@ -87,7 +87,7 @@ def struct_validator(config: dict[str, Any]) -> dict[str, Any]:
             raise vol.Invalid(error)
         if not structure:
             error = (
-                f"Error in sensor {name}. The `{CONF_STRUCTURE}` field can not be empty"
+                f"Error in sensor {name}. The `{CONF_STRUCTURE}` field cannot be empty"
             )
             raise vol.Invalid(error)
         try:
@@ -135,6 +135,20 @@ def number_validator(value: Any) -> int | float:
         pass
     try:
         return float(value)
+    except (TypeError, ValueError) as err:
+        raise vol.Invalid(f"invalid number {value}") from err
+
+
+def nan_validator(value: Any) -> int:
+    """Convert nan string to number (can be hex string or int)."""
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(value, 16)
     except (TypeError, ValueError) as err:
         raise vol.Invalid(f"invalid number {value}") from err
 

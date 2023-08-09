@@ -19,6 +19,8 @@ from .coordinator import YoLinkCoordinator
 class YoLinkEntity(CoordinatorEntity[YoLinkCoordinator]):
     """YoLink Device Basic Entity."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         config_entry: ConfigEntry,
@@ -60,18 +62,6 @@ class YoLinkEntity(CoordinatorEntity[YoLinkCoordinator]):
     def update_entity_state(self, state: dict) -> None:
         """Parse and update entity state, should be overridden."""
 
-    async def call_device_api(self, command: str, params: dict) -> None:
-        """Call device Api."""
-        try:
-            # call_device_http_api will check result, fail by raise YoLinkClientError
-            await self.coordinator.device.call_device_http_api(command, params)
-        except YoLinkAuthFailError as yl_auth_err:
-            self.config_entry.async_start_reauth(self.hass)
-            raise HomeAssistantError(yl_auth_err) from yl_auth_err
-        except YoLinkClientError as yl_client_err:
-            self.coordinator.last_update_success = False
-            raise HomeAssistantError(yl_client_err) from yl_client_err
-
     async def call_device(self, request: ClientRequest) -> None:
         """Call device api."""
         try:
@@ -81,5 +71,4 @@ class YoLinkEntity(CoordinatorEntity[YoLinkCoordinator]):
             self.config_entry.async_start_reauth(self.hass)
             raise HomeAssistantError(yl_auth_err) from yl_auth_err
         except YoLinkClientError as yl_client_err:
-            self.coordinator.last_update_success = False
             raise HomeAssistantError(yl_client_err) from yl_client_err

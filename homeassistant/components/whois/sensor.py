@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional, cast
+from typing import cast
 
 from whois import Domain
 
@@ -14,10 +14,10 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_DOMAIN, UnitOfTime
+from homeassistant.const import CONF_DOMAIN, EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -64,7 +64,7 @@ def _ensure_timezone(timestamp: datetime | None) -> datetime | None:
 SENSORS: tuple[WhoisSensorEntityDescription, ...] = (
     WhoisSensorEntityDescription(
         key="admin",
-        name="Admin",
+        translation_key="admin",
         icon="mdi:account-star",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -72,35 +72,35 @@ SENSORS: tuple[WhoisSensorEntityDescription, ...] = (
     ),
     WhoisSensorEntityDescription(
         key="creation_date",
-        name="Created",
+        translation_key="creation_date",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda domain: _ensure_timezone(domain.creation_date),
     ),
     WhoisSensorEntityDescription(
         key="days_until_expiration",
-        name="Days until expiration",
+        translation_key="days_until_expiration",
         icon="mdi:calendar-clock",
         native_unit_of_measurement=UnitOfTime.DAYS,
         value_fn=_days_until_expiration,
     ),
     WhoisSensorEntityDescription(
         key="expiration_date",
-        name="Expires",
+        translation_key="expiration_date",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda domain: _ensure_timezone(domain.expiration_date),
     ),
     WhoisSensorEntityDescription(
         key="last_updated",
-        name="Last updated",
+        translation_key="last_updated",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda domain: _ensure_timezone(domain.last_updated),
     ),
     WhoisSensorEntityDescription(
         key="owner",
-        name="Owner",
+        translation_key="owner",
         icon="mdi:account",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -108,7 +108,7 @@ SENSORS: tuple[WhoisSensorEntityDescription, ...] = (
     ),
     WhoisSensorEntityDescription(
         key="registrant",
-        name="Registrant",
+        translation_key="registrant",
         icon="mdi:account-edit",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -116,7 +116,7 @@ SENSORS: tuple[WhoisSensorEntityDescription, ...] = (
     ),
     WhoisSensorEntityDescription(
         key="registrar",
-        name="Registrar",
+        translation_key="registrar",
         icon="mdi:store",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -124,7 +124,7 @@ SENSORS: tuple[WhoisSensorEntityDescription, ...] = (
     ),
     WhoisSensorEntityDescription(
         key="reseller",
-        name="Reseller",
+        translation_key="reseller",
         icon="mdi:store",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -155,7 +155,7 @@ async def async_setup_entry(
 
 
 class WhoisSensorEntity(
-    CoordinatorEntity[DataUpdateCoordinator[Optional[Domain]]], SensorEntity
+    CoordinatorEntity[DataUpdateCoordinator[Domain | None]], SensorEntity
 ):
     """Implementation of a WHOIS sensor."""
 

@@ -42,7 +42,9 @@ LITTER_BOX_STATUS_STATE_MAP = {
     LitterBoxStatus.OFF: STATE_OFF,
 }
 
-LITTER_BOX_ENTITY = StateVacuumEntityDescription("litter_box", name="Litter box")
+LITTER_BOX_ENTITY = StateVacuumEntityDescription(
+    "litter_box", translation_key="litter_box"
+)
 
 
 async def async_setup_entry(
@@ -118,7 +120,7 @@ class LitterRobotCleaner(LitterRobotEntity[LitterRobot], StateVacuumEntity):
         if time_str is None:
             return None
 
-        if (parsed_time := dt_util.parse_time(time_str)) is None:  # pragma: no cover
+        if (parsed_time := dt_util.parse_time(time_str)) is None:
             return None
 
         return (

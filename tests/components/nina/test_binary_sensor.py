@@ -46,7 +46,6 @@ async def test_sensors(hass: HomeAssistant) -> None:
         "pynina.baseApi.BaseAPI._makeRequest",
         wraps=mocked_request_function,
     ):
-
         conf_entry: MockConfigEntry = MockConfigEntry(
             domain=DOMAIN, title="NINA", data=ENTRY_DATA
         )
@@ -155,7 +154,6 @@ async def test_sensors_without_corona_filter(hass: HomeAssistant) -> None:
         "pynina.baseApi.BaseAPI._makeRequest",
         wraps=mocked_request_function,
     ):
-
         conf_entry: MockConfigEntry = MockConfigEntry(
             domain=DOMAIN, title="NINA", data=ENTRY_DATA_NO_CORONA
         )
@@ -184,7 +182,7 @@ async def test_sensors_without_corona_filter(hass: HomeAssistant) -> None:
         assert state_w1.attributes.get(ATTR_SEVERITY) == "Minor"
         assert (
             state_w1.attributes.get(ATTR_RECOMMENDED_ACTIONS)
-            == "Es besteht keine Gefahr."
+            == "Waschen sich regelmäßig und gründlich die Hände."
         )
         assert state_w1.attributes.get(ATTR_ID) == "mow.DE-BW-S-SE018-20211102-18-001"
         assert state_w1.attributes.get(ATTR_SENT) == "2021-11-02T20:07:16+01:00"

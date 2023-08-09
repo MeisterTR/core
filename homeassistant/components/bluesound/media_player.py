@@ -396,7 +396,6 @@ class BluesoundPlayer(MediaPlayerEntity):
         _LOGGER.debug("Calling URL: %s", url)
 
         try:
-
             async with async_timeout.timeout(125):
                 response = await self._polling_session.get(
                     url, headers={CONNECTION: KEEP_ALIVE}
@@ -695,7 +694,7 @@ class BluesoundPlayer(MediaPlayerEntity):
         for source in [
             x
             for x in self._services_items
-            if x["type"] == "LocalMusic" or x["type"] == "RadioService"
+            if x["type"] in ("LocalMusic", "RadioService")
         ]:
             sources.append(source["title"])
 

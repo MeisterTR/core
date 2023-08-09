@@ -20,7 +20,7 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.util import Throttle
-from homeassistant.util.dt import get_time_zone, now
+from homeassistant.util.dt import get_time_zone
 
 # Config for rova requests.
 CONF_ZIP_CODE = "zip_code"
@@ -109,7 +109,7 @@ class RovaSensor(SensorEntity):
 
     def __init__(
         self, platform_name, description: SensorEntityDescription, data_service
-    ):
+    ) -> None:
         """Initialize the sensor."""
         self.entity_description = description
         self.data_service = data_service
@@ -150,8 +150,7 @@ class RovaData:
                 tzinfo=get_time_zone("Europe/Amsterdam")
             )
             code = item["GarbageTypeCode"].lower()
-
-            if code not in self.data and date > now():
+            if code not in self.data:
                 self.data[code] = date
 
         _LOGGER.debug("Updated Rova calendar: %s", self.data)
