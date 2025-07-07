@@ -1,8 +1,10 @@
 """Data template classes for discovery used to generate additional data for setup."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from enum import Enum
 import logging
 from typing import Any, cast
 
@@ -87,6 +89,7 @@ from zwave_js_server.const.command_class.multilevel_sensor import (
     MultilevelSensorScaleType,
     MultilevelSensorType,
 )
+from zwave_js_server.exceptions import UnknownValueData
 from zwave_js_server.model.node import Node as ZwaveNode
 from zwave_js_server.model.value import (
     ConfigurationValue as ZwaveConfigurationValue,
@@ -130,7 +133,10 @@ from homeassistant.const import (
 )
 
 from .const import (
-    ENTITY_DESC_KEY_BATTERY,
+    ENTITY_DESC_KEY_BATTERY_LEVEL,
+    ENTITY_DESC_KEY_BATTERY_LIST_STATE,
+    ENTITY_DESC_KEY_BATTERY_MAXIMUM_CAPACITY,
+    ENTITY_DESC_KEY_BATTERY_TEMPERATURE,
     ENTITY_DESC_KEY_CO,
     ENTITY_DESC_KEY_CO2,
     ENTITY_DESC_KEY_CURRENT,
@@ -359,20 +365,8 @@ class NumericSensorDataTemplate(BaseDiscoverySchemaDataTemplate):
     """Data template class for Z-Wave Sensor entities."""
 
     @staticmethod
-    def find_key_from_matching_set(
-        enum_value: MultilevelSensorType
-        | MultilevelSensorScaleType
-        | MeterScaleType
-        | EnergyProductionParameter
-        | EnergyProductionScaleType,
-        set_map: Mapping[
-            str,
-            list[MultilevelSensorType]
-            | list[MultilevelSensorScaleType]
-            | list[MeterScaleType]
-            | list[EnergyProductionScaleType]
-            | list[EnergyProductionParameter],
-        ],
+    def find_key_from_matching_set[_T: Enum](
+        enum_value: _T, set_map: Mapping[str, list[_T]]
     ) -> str | None:
         """Find a key in a set map that matches a given enum value."""
         for key, value_set in set_map.items():
@@ -389,11 +383,38 @@ class NumericSensorDataTemplate(BaseDiscoverySchemaDataTemplate):
     def resolve_data(self, value: ZwaveValue) -> NumericSensorDataTemplateData:
         """Resolve helper class data for a discovered value."""
 
-        if value.command_class == CommandClass.BATTERY:
-            return NumericSensorDataTemplateData(ENTITY_DESC_KEY_BATTERY, PERCENTAGE)
+        if value.command_class == CommandClass.BATTERY and value.property_ == "level":
+            return NumericSensorDataTemplateData(
+                ENTITY_DESC_KEY_BATTERY_LEVEL, PERCENTAGE
+            )
+        if value.command_class == CommandClass.BATTERY and value.property_ in (
+            "chargingStatus",
+            "rechargeOrReplace",
+        ):
+            return NumericSensorDataTemplateData(
+                ENTITY_DESC_KEY_BATTERY_LIST_STATE, None
+            )
+        if (
+            value.command_class == CommandClass.BATTERY
+            and value.property_ == "maximumCapacity"
+        ):
+            return NumericSensorDataTemplateData(
+                ENTITY_DESC_KEY_BATTERY_MAXIMUM_CAPACITY, PERCENTAGE
+            )
+        if (
+            value.command_class == CommandClass.BATTERY
+            and value.property_ == "temperature"
+        ):
+            return NumericSensorDataTemplateData(
+                ENTITY_DESC_KEY_BATTERY_TEMPERATURE, UnitOfTemperature.CELSIUS
+            )
 
         if value.command_class == CommandClass.METER:
-            meter_scale_type = get_meter_scale_type(value)
+            try:
+                meter_scale_type = get_meter_scale_type(value)
+            except UnknownValueData:
+                return NumericSensorDataTemplateData()
+
             unit = self.find_key_from_matching_set(meter_scale_type, METER_UNIT_MAP)
             # We do this because even though these are energy scales, they don't meet
             # the unit requirements for the energy device class.
@@ -418,8 +439,11 @@ class NumericSensorDataTemplate(BaseDiscoverySchemaDataTemplate):
             )
 
         if value.command_class == CommandClass.SENSOR_MULTILEVEL:
-            sensor_type = get_multilevel_sensor_type(value)
-            multilevel_sensor_scale_type = get_multilevel_sensor_scale_type(value)
+            try:
+                sensor_type = get_multilevel_sensor_type(value)
+                multilevel_sensor_scale_type = get_multilevel_sensor_scale_type(value)
+            except UnknownValueData:
+                return NumericSensorDataTemplateData()
             unit = self.find_key_from_matching_set(
                 multilevel_sensor_scale_type, MULTILEVEL_SENSOR_UNIT_MAP
             )
@@ -558,6 +582,7 @@ class ConfigurableFanValueMappingDataTemplate(
 
     `configuration_value_to_fan_value_mapping` maps the values from
     `configuration_option` to the value mapping object.
+
     """
 
     def resolve_data(
@@ -628,6 +653,7 @@ class FixedFanValueMappingDataTemplate(
               )
           ),
       ),
+
     """
 
     def get_fan_value_mapping(

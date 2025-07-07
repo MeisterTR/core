@@ -1,4 +1,5 @@
 """The test for the HERE Travel Time sensor platform."""
+
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -59,7 +60,7 @@ from homeassistant.const import (
     CONF_API_KEY,
     CONF_MODE,
     CONF_NAME,
-    EVENT_HOMEASSISTANT_START,
+    EVENT_HOMEASSISTANT_STARTED,
     UnitOfLength,
     UnitOfTime,
 )
@@ -121,6 +122,7 @@ async def test_sensor(
     departure_time,
 ) -> None:
     """Test that sensor works."""
+    hass.set_state(CoreState.not_running)
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="0123456789",
@@ -142,16 +144,16 @@ async def test_sensor(
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     duration = hass.states.get("sensor.test_duration")
     assert duration.attributes.get("unit_of_measurement") == UnitOfTime.MINUTES
     assert duration.attributes.get(ATTR_ICON) == icon
-    assert duration.state == "26"
+    assert duration.state == "26.1833333333333"
 
     assert float(hass.states.get("sensor.test_distance").state) == pytest.approx(13.682)
-    assert hass.states.get("sensor.test_duration_in_traffic").state == "30"
+    assert hass.states.get("sensor.test_duration_in_traffic").state == "29.6"
     assert hass.states.get("sensor.test_origin").state == "22nd St NW"
     assert (
         hass.states.get("sensor.test_origin").attributes.get(ATTR_LATITUDE)
@@ -200,7 +202,7 @@ async def test_circular_ref(
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert "No coordinates found for test.first" in caplog.text
@@ -209,6 +211,7 @@ async def test_circular_ref(
 @pytest.mark.usefixtures("valid_response")
 async def test_public_transport(hass: HomeAssistant) -> None:
     """Test that public transport mode is handled."""
+    hass.set_state(CoreState.not_running)
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="0123456789",
@@ -231,7 +234,7 @@ async def test_public_transport(hass: HomeAssistant) -> None:
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert (
@@ -262,7 +265,7 @@ async def test_no_attribution_response(hass: HomeAssistant) -> None:
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert (
@@ -272,6 +275,7 @@ async def test_no_attribution_response(hass: HomeAssistant) -> None:
 
 async def test_entity_ids(hass: HomeAssistant, valid_response: MagicMock) -> None:
     """Test that origin/destination supplied by entities works."""
+    hass.set_state(CoreState.not_running)
     zone_config = {
         "zone": [
             {
@@ -308,15 +312,15 @@ async def test_entity_ids(hass: HomeAssistant, valid_response: MagicMock) -> Non
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert hass.states.get("sensor.test_distance").state == "13.682"
 
     valid_response.assert_called_with(
         transport_mode=TransportMode.TRUCK,
-        origin=Place(ORIGIN_LATITUDE, ORIGIN_LONGITUDE),
-        destination=Place(DESTINATION_LATITUDE, DESTINATION_LONGITUDE),
+        origin=Place(float(ORIGIN_LATITUDE), float(ORIGIN_LONGITUDE)),
+        destination=Place(float(DESTINATION_LATITUDE), float(DESTINATION_LONGITUDE)),
         routing_mode=RoutingMode.FAST,
         arrival_time=None,
         departure_time=None,
@@ -347,7 +351,7 @@ async def test_destination_entity_not_found(
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert "Could not find entity device_tracker.test" in caplog.text
@@ -375,7 +379,7 @@ async def test_origin_entity_not_found(
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert "Could not find entity device_tracker.test" in caplog.text
@@ -407,7 +411,7 @@ async def test_invalid_destination_entity_state(
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert (
@@ -441,7 +445,7 @@ async def test_invalid_origin_entity_state(
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     assert (
@@ -476,7 +480,7 @@ async def test_route_not_found(
         entry.add_to_hass(hass)
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
         await hass.async_block_till_done()
 
         assert "Route calculation failed: Couldn't find a route." in caplog.text
@@ -486,7 +490,7 @@ async def test_route_not_found(
 async def test_restore_state(hass: HomeAssistant) -> None:
     """Test sensor restore state."""
     # Home assistant is not running yet
-    hass.state = CoreState.not_running
+    hass.set_state(CoreState.not_running)
     last_reset = "2022-11-29T00:00:00.000000+00:00"
     mock_restore_cache_with_extra_data(
         hass,
@@ -497,13 +501,13 @@ async def test_restore_state(hass: HomeAssistant) -> None:
                     "1234",
                     attributes={
                         ATTR_LAST_RESET: last_reset,
-                        ATTR_UNIT_OF_MEASUREMENT: UnitOfTime.MINUTES,
+                        ATTR_UNIT_OF_MEASUREMENT: UnitOfTime.SECONDS,
                         ATTR_STATE_CLASS: SensorStateClass.MEASUREMENT,
                     },
                 ),
                 {
                     "native_value": 1234,
-                    "native_unit_of_measurement": UnitOfTime.MINUTES,
+                    "native_unit_of_measurement": UnitOfTime.SECONDS,
                     "icon": "mdi:car",
                     "last_reset": last_reset,
                 },
@@ -514,13 +518,13 @@ async def test_restore_state(hass: HomeAssistant) -> None:
                     "5678",
                     attributes={
                         ATTR_LAST_RESET: last_reset,
-                        ATTR_UNIT_OF_MEASUREMENT: UnitOfTime.MINUTES,
+                        ATTR_UNIT_OF_MEASUREMENT: UnitOfTime.SECONDS,
                         ATTR_STATE_CLASS: SensorStateClass.MEASUREMENT,
                     },
                 ),
                 {
                     "native_value": 5678,
-                    "native_unit_of_measurement": UnitOfTime.MINUTES,
+                    "native_unit_of_measurement": UnitOfTime.SECONDS,
                     "icon": "mdi:car",
                     "last_reset": last_reset,
                 },
@@ -592,12 +596,12 @@ async def test_restore_state(hass: HomeAssistant) -> None:
 
     # restore from cache
     state = hass.states.get("sensor.test_duration")
-    assert state.state == "1234"
+    assert state.state == "20.5666666666667"
     assert state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) == UnitOfTime.MINUTES
     assert state.attributes.get(ATTR_STATE_CLASS) == SensorStateClass.MEASUREMENT
 
     state = hass.states.get("sensor.test_duration_in_traffic")
-    assert state.state == "5678"
+    assert state.state == "94.6333333333333"
     assert state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) == UnitOfTime.MINUTES
     assert state.attributes.get(ATTR_STATE_CLASS) == SensorStateClass.MEASUREMENT
 
@@ -634,6 +638,7 @@ async def test_transit_errors(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture, exception, expected_message
 ) -> None:
     """Test that transit errors are correctly handled."""
+    hass.set_state(CoreState.not_running)
     with patch(
         "here_transit.HERETransitApi.route",
         side_effect=exception(),
@@ -655,7 +660,7 @@ async def test_transit_errors(
         entry.add_to_hass(hass)
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
         await hass.async_block_till_done()
 
         assert expected_message in caplog.text
@@ -667,6 +672,7 @@ async def test_routing_rate_limit(
     freezer: FrozenDateTimeFactory,
 ) -> None:
     """Test that rate limiting is applied when encountering HTTP 429."""
+    hass.set_state(CoreState.not_running)
     with patch(
         "here_routing.HERERoutingApi.route",
         return_value=RESPONSE,
@@ -680,7 +686,7 @@ async def test_routing_rate_limit(
         entry.add_to_hass(hass)
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
         await hass.async_block_till_done()
 
         assert hass.states.get("sensor.test_distance").state == "13.682"
@@ -715,6 +721,7 @@ async def test_transit_rate_limit(
     freezer: FrozenDateTimeFactory,
 ) -> None:
     """Test that rate limiting is applied when encountering HTTP 429."""
+    hass.set_state(CoreState.not_running)
     with patch(
         "here_transit.HERETransitApi.route",
         return_value=TRANSIT_RESPONSE,
@@ -736,7 +743,7 @@ async def test_transit_rate_limit(
         entry.add_to_hass(hass)
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
         await hass.async_block_till_done()
 
         assert hass.states.get("sensor.test_distance").state == "1.883"
@@ -770,6 +777,7 @@ async def test_multiple_sections(
     hass: HomeAssistant,
 ) -> None:
     """Test that multiple sections are handled correctly."""
+    hass.set_state(CoreState.not_running)
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="0123456789",
@@ -787,14 +795,16 @@ async def test_multiple_sections(
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_START)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
     duration = hass.states.get("sensor.test_duration")
-    assert duration.state == "18"
+    assert duration.state == "18.4833333333333"
 
     assert float(hass.states.get("sensor.test_distance").state) == pytest.approx(3.583)
-    assert hass.states.get("sensor.test_duration_in_traffic").state == "18"
+    assert (
+        hass.states.get("sensor.test_duration_in_traffic").state == "18.4833333333333"
+    )
     assert hass.states.get("sensor.test_origin").state == "Chemin de Halage"
     assert (
         hass.states.get("sensor.test_origin").attributes.get(ATTR_LATITUDE)

@@ -5,11 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
 from unittest.mock import Mock
 
-from pyunifiprotect import ProtectApiClient
-from pyunifiprotect.data import (
+from uiprotect import ProtectApiClient
+from uiprotect.data import (
     Bootstrap,
     Camera,
     Event,
@@ -18,14 +17,15 @@ from pyunifiprotect.data import (
     ProtectAdoptableDeviceModel,
     WSSubscriptionMessage,
 )
-from pyunifiprotect.data.bootstrap import ProtectDeviceRef
-from pyunifiprotect.test_util.anonymize import random_hex
+from uiprotect.data.bootstrap import ProtectDeviceRef
+from uiprotect.test_util.anonymize import random_hex
+from uiprotect.websocket import WebsocketState
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityDescription
-import homeassistant.util.dt as dt_util
+from homeassistant.util import dt as dt_util
 
 from tests.common import MockConfigEntry, async_fire_time_changed
 
@@ -37,12 +37,13 @@ class MockUFPFixture:
     entry: MockConfigEntry
     api: ProtectApiClient
     ws_subscription: Callable[[WSSubscriptionMessage], None] | None = None
+    ws_state_subscription: Callable[[WebsocketState], None] | None = None
 
-    def ws_msg(self, msg: WSSubscriptionMessage) -> Any:
+    def ws_msg(self, msg: WSSubscriptionMessage) -> None:
         """Emit WS message for testing."""
 
         if self.ws_subscription is not None:
-            return self.ws_subscription(msg)
+            self.ws_subscription(msg)
 
 
 def reset_objects(bootstrap: Bootstrap):
@@ -107,7 +108,13 @@ def ids_from_device_description(
     """Return expected unique_id and entity_id for a give platform/device/description combination."""
 
     entity_name = normalize_name(device.display_name)
-    description_entity_name = normalize_name(str(description.name))
+
+    if getattr(description, "translation_key", None):
+        description_entity_name = normalize_name(description.translation_key)
+    elif getattr(description, "device_class", None):
+        description_entity_name = normalize_name(description.device_class)
+    else:
+        description_entity_name = normalize_name(description.key)
 
     unique_id = f"{device.mac}_{description.key}"
     entity_id = f"{platform.value}.{entity_name}_{description_entity_name}"

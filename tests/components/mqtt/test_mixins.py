@@ -1,21 +1,34 @@
 """The tests for shared code of the MQTT platform."""
 
-from unittest.mock import patch
+from typing import Any
+from unittest.mock import call, patch
 
 import pytest
 
 from homeassistant.components import mqtt, sensor
 from homeassistant.components.mqtt.sensor import DEFAULT_NAME as DEFAULT_SENSOR_NAME
+from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.const import (
+    ATTR_FRIENDLY_NAME,
     EVENT_HOMEASSISTANT_STARTED,
     EVENT_STATE_CHANGED,
-    Platform,
 )
 from homeassistant.core import CoreState, HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
+from homeassistant.util import slugify
+
+from .common import (
+    MOCK_NOTIFY_SUBENTRY_DATA_SINGLE,
+    MOCK_SUBENTRY_DATA_BAD_COMPONENT_SCHEMA,
+    MOCK_SUBENTRY_DATA_SET_MIX,
+)
 
 from tests.common import MockConfigEntry, async_capture_events, async_fire_mqtt_message
-from tests.typing import MqttMockHAClientGenerator, MqttMockPahoClient
+from tests.typing import MqttMockHAClientGenerator
 
 
 @pytest.mark.parametrize(
@@ -36,10 +49,8 @@ from tests.typing import MqttMockHAClientGenerator, MqttMockPahoClient
         }
     ],
 )
-@patch("homeassistant.components.mqtt.PLATFORMS", [Platform.SENSOR])
 async def test_availability_with_shared_state_topic(
-    hass: HomeAssistant,
-    mqtt_mock_entry: MqttMockHAClientGenerator,
+    hass: HomeAssistant, mqtt_mock_entry: MqttMockHAClientGenerator
 ) -> None:
     """Test the state is not changed twice.
 
@@ -88,7 +99,6 @@ async def test_availability_with_shared_state_topic(
         "friendly_name",
         "device_name",
         "assert_log",
-        "issue_events",
     ),
     [
         (  # default_entity_name_without_device_name
@@ -105,7 +115,6 @@ async def test_availability_with_shared_state_topic(
             DEFAULT_SENSOR_NAME,
             None,
             True,
-            0,
         ),
         (  # default_entity_name_with_device_name
             {
@@ -121,7 +130,6 @@ async def test_availability_with_shared_state_topic(
             "Test MQTT Sensor",
             "Test",
             False,
-            0,
         ),
         (  # name_follows_device_class
             {
@@ -138,7 +146,6 @@ async def test_availability_with_shared_state_topic(
             "Test Humidity",
             "Test",
             False,
-            0,
         ),
         (  # name_follows_device_class_without_device_name
             {
@@ -155,7 +162,6 @@ async def test_availability_with_shared_state_topic(
             "Humidity",
             None,
             True,
-            0,
         ),
         (  # name_overrides_device_class
             {
@@ -173,7 +179,6 @@ async def test_availability_with_shared_state_topic(
             "Test MySensor",
             "Test",
             False,
-            0,
         ),
         (  # name_set_no_device_name_set
             {
@@ -191,7 +196,6 @@ async def test_availability_with_shared_state_topic(
             "MySensor",
             None,
             True,
-            0,
         ),
         (  # none_entity_name_with_device_name
             {
@@ -209,7 +213,6 @@ async def test_availability_with_shared_state_topic(
             "Test",
             "Test",
             False,
-            0,
         ),
         (  # none_entity_name_without_device_name
             {
@@ -227,7 +230,6 @@ async def test_availability_with_shared_state_topic(
             "mqtt veryunique",
             None,
             True,
-            0,
         ),
         (  # entity_name_and_device_name_the_same
             {
@@ -244,11 +246,10 @@ async def test_availability_with_shared_state_topic(
                     }
                 }
             },
-            "sensor.hello_world",
-            "Hello world",
+            "sensor.hello_world_hello_world",
+            "Hello world Hello world",
             "Hello world",
             False,
-            1,
         ),
         (  # entity_name_startswith_device_name1
             {
@@ -265,11 +266,10 @@ async def test_availability_with_shared_state_topic(
                     }
                 }
             },
-            "sensor.world_automation",
-            "World automation",
+            "sensor.world_world_automation",
+            "World World automation",
             "World",
             False,
-            1,
         ),
         (  # entity_name_startswith_device_name2
             {
@@ -286,11 +286,10 @@ async def test_availability_with_shared_state_topic(
                     }
                 }
             },
-            "sensor.world_automation",
-            "world automation",
+            "sensor.world_world_automation",
+            "world world automation",
             "world",
             False,
-            1,
         ),
     ],
     ids=[
@@ -307,38 +306,38 @@ async def test_availability_with_shared_state_topic(
         "entity_name_startswith_device_name2",
     ],
 )
-@patch("homeassistant.components.mqtt.PLATFORMS", [Platform.SENSOR])
 @patch("homeassistant.components.mqtt.client.DISCOVERY_COOLDOWN", 0.0)
+@pytest.mark.usefixtures("mqtt_client_mock")
 async def test_default_entity_and_device_name(
     hass: HomeAssistant,
-    mqtt_client_mock: MqttMockPahoClient,
-    mqtt_config_entry_data,
+    device_registry: dr.DeviceRegistry,
     caplog: pytest.LogCaptureFixture,
     entity_id: str,
     friendly_name: str,
     device_name: str | None,
     assert_log: bool,
-    issue_events: int,
 ) -> None:
     """Test device name setup with and without a device_class set.
 
     This is a test helper for the _setup_common_attributes_from_config mixin.
     """
-    # mqtt_mock = await mqtt_mock_entry()
 
     events = async_capture_events(hass, ir.EVENT_REPAIRS_ISSUE_REGISTRY_UPDATED)
-    hass.state = CoreState.starting
+    hass.set_state(CoreState.starting)
     await hass.async_block_till_done()
 
-    entry = MockConfigEntry(domain=mqtt.DOMAIN, data={mqtt.CONF_BROKER: "mock-broker"})
+    entry = MockConfigEntry(
+        domain=mqtt.DOMAIN,
+        data={mqtt.CONF_BROKER: "mock-broker"},
+        version=mqtt.CONFIG_ENTRY_VERSION,
+        minor_version=mqtt.CONFIG_ENTRY_MINOR_VERSION,
+    )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
-    registry = dr.async_get(hass)
-
-    device = registry.async_get_device({("mqtt", "helloworld")})
+    device = device_registry.async_get_device({("mqtt", "helloworld")})
     assert device is not None
     assert device.name == device_name
 
@@ -350,5 +349,241 @@ async def test_default_entity_and_device_name(
         "MQTT device information always needs to include a name" in caplog.text
     ) is assert_log
 
-    # Assert that an issues ware registered
-    assert len(events) == issue_events
+    # Assert that no issues ware registered
+    assert len(events) == 0
+    await hass.async_block_till_done(wait_background_tasks=True)
+    # Assert that no issues ware registered
+    assert len(events) == 0
+
+
+async def test_name_attribute_is_set_or_not(
+    hass: HomeAssistant, mqtt_mock_entry: MqttMockHAClientGenerator
+) -> None:
+    """Test frendly name with device_class set.
+
+    This is a test helper for the _setup_common_attributes_from_config mixin.
+    """
+    await mqtt_mock_entry()
+    async_fire_mqtt_message(
+        hass,
+        "homeassistant/binary_sensor/bla/config",
+        '{ "name": "Gate", "state_topic": "test-topic", "device_class": "door", '
+        '"object_id": "gate",'
+        '"device": {"identifiers": "very_unique", "name": "xyz_door_sensor"}'
+        "}",
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get("binary_sensor.gate")
+
+    assert state is not None
+    assert state.attributes.get(ATTR_FRIENDLY_NAME) == "Gate"
+
+    # Remove the name in a discovery update
+    async_fire_mqtt_message(
+        hass,
+        "homeassistant/binary_sensor/bla/config",
+        '{ "state_topic": "test-topic", "device_class": "door", '
+        '"object_id": "gate",'
+        '"device": {"identifiers": "very_unique", "name": "xyz_door_sensor"}'
+        "}",
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get("binary_sensor.gate")
+
+    assert state is not None
+    assert state.attributes.get(ATTR_FRIENDLY_NAME) == "Door"
+
+    # Set the name to `null` in a discovery update
+    async_fire_mqtt_message(
+        hass,
+        "homeassistant/binary_sensor/bla/config",
+        '{ "name": null, "state_topic": "test-topic", "device_class": "door", '
+        '"object_id": "gate",'
+        '"device": {"identifiers": "very_unique", "name": "xyz_door_sensor"}'
+        "}",
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get("binary_sensor.gate")
+
+    assert state is not None
+    assert state.attributes.get(ATTR_FRIENDLY_NAME) is None
+
+
+@pytest.mark.parametrize(
+    "hass_config",
+    [
+        {
+            mqtt.DOMAIN: {
+                sensor.DOMAIN: {
+                    "name": "test",
+                    "state_topic": "state-topic",
+                    "availability_topic": "test-topic",
+                    "availability_template": "{{ value_json.some_var * 1 }}",
+                }
+            }
+        },
+        {
+            mqtt.DOMAIN: {
+                sensor.DOMAIN: {
+                    "name": "test",
+                    "state_topic": "state-topic",
+                    "availability": {
+                        "topic": "test-topic",
+                        "value_template": "{{ value_json.some_var * 1 }}",
+                    },
+                }
+            }
+        },
+        {
+            mqtt.DOMAIN: {
+                sensor.DOMAIN: {
+                    "name": "test",
+                    "state_topic": "state-topic",
+                    "json_attributes_topic": "test-topic",
+                    "json_attributes_template": "{{ value_json.some_var * 1 }}",
+                }
+            }
+        },
+    ],
+    ids=[
+        "availability_template1",
+        "availability_template2",
+        "json_attributes_template",
+    ],
+)
+async def test_value_template_fails(
+    hass: HomeAssistant,
+    mqtt_mock_entry: MqttMockHAClientGenerator,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test the rendering of MQTT value template fails."""
+    await mqtt_mock_entry()
+    async_fire_mqtt_message(hass, "test-topic", '{"some_var": null }')
+    assert (
+        "TypeError: unsupported operand type(s) for *: 'NoneType' and 'int' rendering template"
+        in caplog.text
+    )
+
+
+@pytest.mark.parametrize(
+    "mqtt_config_subentries_data",
+    [
+        (
+            ConfigSubentryData(
+                data=MOCK_SUBENTRY_DATA_SET_MIX,
+                subentry_type="device",
+                title="Mock subentry",
+            ),
+        )
+    ],
+)
+async def test_loading_subentries(
+    hass: HomeAssistant,
+    mqtt_mock_entry: MqttMockHAClientGenerator,
+    mqtt_config_subentries_data: tuple[dict[str, Any]],
+    device_registry: dr.DeviceRegistry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Test loading subentries."""
+    await mqtt_mock_entry()
+    entry = hass.config_entries.async_entries(mqtt.DOMAIN)[0]
+    subentry_id = next(iter(entry.subentries))
+    # Each subentry has one device
+    device = device_registry.async_get_device({("mqtt", subentry_id)})
+    assert device is not None
+    for object_id, component in mqtt_config_subentries_data[0]["data"][
+        "components"
+    ].items():
+        platform = component["platform"]
+        entity_id = f"{platform}.{slugify(device.name)}_{slugify(component['name'])}"
+        entity_entry_entity_id = entity_registry.async_get_entity_id(
+            platform, mqtt.DOMAIN, f"{subentry_id}_{object_id}"
+        )
+        assert entity_entry_entity_id == entity_id
+        state = hass.states.get(entity_id)
+        assert state is not None
+        assert (
+            state.attributes.get("entity_picture") == f"https://example.com/{object_id}"
+        )
+        # Availability was configured, so entities are unavailable
+        assert state.state == "unavailable"
+
+    # Make entities available
+    async_fire_mqtt_message(hass, "test/availability", '{"availability": "online"}')
+    for component in mqtt_config_subentries_data[0]["data"]["components"].values():
+        platform = component["platform"]
+        entity_id = f"{platform}.{slugify(device.name)}_{slugify(component['name'])}"
+        state = hass.states.get(entity_id)
+        assert state is not None
+        assert state.state == "unknown"
+
+
+@pytest.mark.parametrize(
+    "mqtt_config_subentries_data",
+    [
+        (
+            ConfigSubentryData(
+                data=MOCK_SUBENTRY_DATA_BAD_COMPONENT_SCHEMA,
+                subentry_type="device",
+                title="Mock subentry",
+            ),
+        )
+    ],
+)
+async def test_loading_subentry_with_bad_component_schema(
+    hass: HomeAssistant,
+    mqtt_mock_entry: MqttMockHAClientGenerator,
+    mqtt_config_subentries_data: tuple[dict[str, Any]],
+    device_registry: dr.DeviceRegistry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test loading subentries."""
+    await mqtt_mock_entry()
+    entry = hass.config_entries.async_entries(mqtt.DOMAIN)[0]
+    subentry_id = next(iter(entry.subentries))
+    # Each subentry has one device
+    device = device_registry.async_get_device({("mqtt", subentry_id)})
+    assert device is None
+    assert (
+        "Schema violation occurred when trying to set up entity from subentry"
+        in caplog.text
+    )
+
+
+@pytest.mark.parametrize(
+    "mqtt_config_subentries_data",
+    [
+        (
+            ConfigSubentryData(
+                data=MOCK_NOTIFY_SUBENTRY_DATA_SINGLE,
+                subentry_type="device",
+                title="Mock subentry",
+            ),
+        )
+    ],
+)
+async def test_qos_on_mqt_device_from_subentry(
+    hass: HomeAssistant,
+    mqtt_mock_entry: MqttMockHAClientGenerator,
+    mqtt_config_subentries_data: tuple[dict[str, Any]],
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test QoS is set correctly on entities from MQTT device."""
+    mqtt_mock = await mqtt_mock_entry()
+    entry = hass.config_entries.async_entries(mqtt.DOMAIN)[0]
+    subentry_id = next(iter(entry.subentries))
+    # Each subentry has one device
+    device = device_registry.async_get_device({("mqtt", subentry_id)})
+    assert device is not None
+    assert hass.states.get("notify.milk_notifier_milkman_alert") is not None
+    await hass.services.async_call(
+        "notify",
+        "send_message",
+        {"entity_id": "notify.milk_notifier_milkman_alert", "message": "Test message"},
+    )
+    await hass.async_block_till_done()
+    assert len(mqtt_mock.async_publish.mock_calls) == 1
+    mqtt_mock.async_publish.mock_calls[0] = call("test-topic", "Test message", 1, False)

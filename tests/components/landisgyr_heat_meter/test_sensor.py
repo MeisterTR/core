@@ -1,11 +1,12 @@
 """The tests for the Landis+Gyr Heat Meter sensor platform."""
+
 import datetime
 from unittest.mock import patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 import serial
-from syrupy import SnapshotAssertion
+from syrupy.assertion import SnapshotAssertion
 from ultraheat_api.response import HeatMeterResponse
 
 from homeassistant.components.homeassistant import DOMAIN as HA_DOMAIN
@@ -150,7 +151,7 @@ async def test_exception_on_polling(
     assert state.state == "123.0"
 
     # Now 'disable' the connection and wait for polling and see if it fails
-    mock_heat_meter().read.side_effect = serial.serialutil.SerialException
+    mock_heat_meter().read.side_effect = serial.SerialException
     freezer.tick(POLLING_INTERVAL)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()

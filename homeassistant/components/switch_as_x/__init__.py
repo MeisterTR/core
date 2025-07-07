@@ -1,4 +1,5 @@
 """Component to wrap switch entities in entities of other domains."""
+
 from __future__ import annotations
 
 import logging
@@ -10,13 +11,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.helpers.event import async_track_entity_registry_updated_event
-from homeassistant.helpers.typing import EventType
+from homeassistant.helpers.helper_integration import async_handle_source_entity_changes
 
-from .const import CONF_TARGET_DOMAIN
-from .light import LightSwitch
-
-__all__ = ["LightSwitch"]
+from .const import CONF_INVERT, CONF_TARGET_DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,10 +41,11 @@ def async_add_to_device(
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a config entry."""
-    registry = er.async_get(hass)
-    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
     try:
-        entity_id = er.async_validate_entity_id(registry, entry.options[CONF_ENTITY_ID])
+        entity_id = er.async_validate_entity_id(
+            entity_registry, entry.options[CONF_ENTITY_ID]
+        )
     except vol.Invalid:
         # The entity is identified by an unknown entity registry ID
         _LOGGER.error(
@@ -56,48 +54,64 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         return False
 
-    async def async_registry_updated(
-        event: EventType[er.EventEntityRegistryUpdatedData],
-    ) -> None:
-        """Handle entity registry update."""
-        data = event.data
-        if data["action"] == "remove":
-            await hass.config_entries.async_remove(entry.entry_id)
+    def set_source_entity_id_or_uuid(source_entity_id: str) -> None:
+        hass.config_entries.async_update_entry(
+            entry,
+            options={**entry.options, CONF_ENTITY_ID: source_entity_id},
+        )
 
-        if data["action"] != "update":
-            return
-
-        if "entity_id" in data["changes"]:
-            # Entity_id changed, reload the config entry
-            await hass.config_entries.async_reload(entry.entry_id)
-
-        if device_id and "device_id" in data["changes"]:
-            # If the tracked switch is no longer in the device, remove our config entry
-            # from the device
-            if (
-                not (entity_entry := registry.async_get(data[CONF_ENTITY_ID]))
-                or not device_registry.async_get(device_id)
-                or entity_entry.device_id == device_id
-            ):
-                # No need to do any cleanup
-                return
-
-            device_registry.async_update_device(
-                device_id, remove_config_entry_id=entry.entry_id
-            )
+    async def source_entity_removed() -> None:
+        # The source entity has been removed, we remove the config entry because
+        # switch_as_x does not allow replacing the wrapped entity.
+        await hass.config_entries.async_remove(entry.entry_id)
 
     entry.async_on_unload(
-        async_track_entity_registry_updated_event(
-            hass, entity_id, async_registry_updated
+        async_handle_source_entity_changes(
+            hass,
+            helper_config_entry_id=entry.entry_id,
+            set_source_entity_id_or_uuid=set_source_entity_id_or_uuid,
+            source_device_id=async_add_to_device(hass, entry, entity_id),
+            source_entity_id_or_uuid=entry.options[CONF_ENTITY_ID],
+            source_entity_removed=source_entity_removed,
         )
     )
-
-    device_id = async_add_to_device(hass, entry, entity_id)
+    entry.async_on_unload(entry.add_update_listener(config_entry_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(
         entry, (entry.options[CONF_TARGET_DOMAIN],)
     )
     return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old entry."""
+    _LOGGER.debug(
+        "Migrating from version %s.%s", config_entry.version, config_entry.minor_version
+    )
+
+    if config_entry.version > 1:
+        # This means the user has downgraded from a future version
+        return False
+    if config_entry.version == 1:
+        options = {**config_entry.options}
+        if config_entry.minor_version < 2:
+            options.setdefault(CONF_INVERT, False)
+        hass.config_entries.async_update_entry(
+            config_entry, options=options, minor_version=2
+        )
+
+    _LOGGER.debug(
+        "Migration to version %s.%s successful",
+        config_entry.version,
+        config_entry.minor_version,
+    )
+
+    return True
+
+
+async def config_entry_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update listener, called when the config entry options are changed."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

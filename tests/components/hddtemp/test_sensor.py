@@ -1,11 +1,15 @@
 """The tests for the hddtemp platform."""
+
 import socket
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
+from homeassistant.components.hddtemp import DOMAIN
+from homeassistant.components.sensor import DOMAIN as PLATFORM_DOMAIN
 from homeassistant.const import UnitOfTemperature
-from homeassistant.core import HomeAssistant
+from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN, HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
 
 VALID_CONFIG_MINIMAL = {"sensor": {"platform": "hddtemp"}}
@@ -59,16 +63,16 @@ REFERENCE = {
 class TelnetMock:
     """Mock class for the telnetlib.Telnet object."""
 
-    def __init__(self, host, port, timeout=0):
+    def __init__(self, host, port, timeout=0) -> None:
         """Initialize Telnet object."""
         self.host = host
         self.port = port
         self.timeout = timeout
         self.sample_data = bytes(
             "|/dev/sda1|WDC WD30EZRX-12DC0B0|29|C|"
-            + "|/dev/sdb1|WDC WD15EADS-11P7B2|32|C|"
-            + "|/dev/sdc1|WDC WD20EARX-22MMMB0|29|C|"
-            + "|/dev/sdd1|WDC WD15EARS-00Z5B1|89|F|",
+            "|/dev/sdb1|WDC WD15EADS-11P7B2|32|C|"
+            "|/dev/sdc1|WDC WD20EARX-22MMMB0|29|C|"
+            "|/dev/sdd1|WDC WD15EARS-00Z5B1|89|F|",
             "ascii",
         )
 
@@ -84,7 +88,7 @@ class TelnetMock:
 @pytest.fixture
 def telnetmock():
     """Mock telnet."""
-    with patch("telnetlib.Telnet", new=TelnetMock):
+    with patch("homeassistant.components.hddtemp.sensor.Telnet", new=TelnetMock):
         yield
 
 
@@ -131,7 +135,7 @@ async def test_hddtemp_one_disk(hass: HomeAssistant, telnetmock) -> None:
 
     reference = REFERENCE[state.attributes.get("device")]
 
-    assert state.state == reference["temperature"]
+    assert round(float(state.state), 0) == float(reference["temperature"])
     assert state.attributes.get("device") == reference["device"]
     assert state.attributes.get("model") == reference["model"]
     assert (
@@ -157,11 +161,11 @@ async def test_hddtemp_multiple_disks(hass: HomeAssistant, telnetmock) -> None:
     assert await async_setup_component(hass, "sensor", VALID_CONFIG_MULTIPLE_DISKS)
     await hass.async_block_till_done()
 
-    for sensor in [
+    for sensor in (
         "sensor.hd_temperature_dev_sda1",
         "sensor.hd_temperature_dev_sdb1",
         "sensor.hd_temperature_dev_sdc1",
-    ]:
+    ):
         state = hass.states.get(sensor)
 
         reference = REFERENCE[state.attributes.get("device")]
@@ -191,3 +195,17 @@ async def test_hddtemp_host_unreachable(hass: HomeAssistant, telnetmock) -> None
     assert await async_setup_component(hass, "sensor", VALID_CONFIG_HOST_UNREACHABLE)
     await hass.async_block_till_done()
     assert len(hass.states.async_all()) == 0
+
+
+@patch.dict("sys.modules", gsp=Mock())
+async def test_repair_issue_is_created(
+    hass: HomeAssistant,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """Test repair issue is created."""
+    assert await async_setup_component(hass, PLATFORM_DOMAIN, VALID_CONFIG_MINIMAL)
+    await hass.async_block_till_done()
+    assert (
+        HOMEASSISTANT_DOMAIN,
+        f"deprecated_system_packages_yaml_integration_{DOMAIN}",
+    ) in issue_registry.issues

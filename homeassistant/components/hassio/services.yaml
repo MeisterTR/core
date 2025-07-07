@@ -30,14 +30,6 @@ addon_stop:
       selector:
         addon:
 
-addon_update:
-  fields:
-    addon:
-      required: true
-      example: core_ssh
-      selector:
-        addon:
-
 host_reboot:
 host_shutdown:
 backup_full:
@@ -58,10 +50,18 @@ backup_full:
       example: my_backup_mount
       selector:
         backup_location:
+    homeassistant_exclude_database:
+      default: false
+      selector:
+        boolean:
 
 backup_partial:
   fields:
     homeassistant:
+      selector:
+        boolean:
+    homeassistant_exclude_database:
+      default: false
       selector:
         boolean:
     addons:

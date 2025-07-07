@@ -1,13 +1,14 @@
-"""Support for Ruckus Unleashed devices."""
+"""Support for Ruckus devices."""
+
 from __future__ import annotations
 
 import logging
 
-from homeassistant.components.device_tracker import ScannerEntity, SourceType
+from homeassistant.components.device_tracker import ScannerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -18,14 +19,17 @@ from .const import (
     KEY_SYS_CLIENTS,
     UNDO_UPDATE_LISTENERS,
 )
+from .coordinator import RuckusDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__package__)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up device tracker for Ruckus Unleashed component."""
+    """Set up device tracker for Ruckus component."""
     coordinator = hass.data[DOMAIN][entry.entry_id][COORDINATOR]
 
     tracked: set[str] = set()
@@ -56,29 +60,30 @@ def add_new_entities(coordinator, async_add_entities, tracked):
 
         device = coordinator.data[KEY_SYS_CLIENTS][mac]
         _LOGGER.debug("adding new device: [%s] %s", mac, device[API_CLIENT_HOSTNAME])
-        new_tracked.append(
-            RuckusUnleashedDevice(coordinator, mac, device[API_CLIENT_HOSTNAME])
-        )
+        new_tracked.append(RuckusDevice(coordinator, mac, device[API_CLIENT_HOSTNAME]))
         tracked.add(mac)
 
     async_add_entities(new_tracked)
 
 
 @callback
-def restore_entities(registry, coordinator, entry, async_add_entities, tracked):
+def restore_entities(
+    registry: er.EntityRegistry,
+    coordinator: RuckusDataUpdateCoordinator,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+    tracked: set[str],
+) -> None:
     """Restore clients that are not a part of active clients list."""
-    missing = []
+    missing: list[RuckusDevice] = []
 
-    for entity in registry.entities.values():
+    for entity in registry.entities.get_entries_for_config_entry_id(entry.entry_id):
         if (
-            entity.config_entry_id == entry.entry_id
-            and entity.platform == DOMAIN
+            entity.platform == DOMAIN
             and entity.unique_id not in coordinator.data[KEY_SYS_CLIENTS]
         ):
             missing.append(
-                RuckusUnleashedDevice(
-                    coordinator, entity.unique_id, entity.original_name
-                )
+                RuckusDevice(coordinator, entity.unique_id, entity.original_name)
             )
             tracked.add(entity.unique_id)
 
@@ -86,11 +91,11 @@ def restore_entities(registry, coordinator, entry, async_add_entities, tracked):
     async_add_entities(missing)
 
 
-class RuckusUnleashedDevice(CoordinatorEntity, ScannerEntity):
-    """Representation of a Ruckus Unleashed client."""
+class RuckusDevice(CoordinatorEntity, ScannerEntity):
+    """Representation of a Ruckus client."""
 
     def __init__(self, coordinator, mac, name) -> None:
-        """Initialize a Ruckus Unleashed client."""
+        """Initialize a Ruckus client."""
         super().__init__(coordinator)
         self._mac = mac
         self._name = name
@@ -103,27 +108,18 @@ class RuckusUnleashedDevice(CoordinatorEntity, ScannerEntity):
     @property
     def name(self) -> str:
         """Return the name."""
-        return (
-            self._name
-            if not self.is_connected
-            else self.coordinator.data[KEY_SYS_CLIENTS][self._mac][API_CLIENT_HOSTNAME]
-        )
+        if not self.is_connected:
+            return self._name
+        return self.coordinator.data[KEY_SYS_CLIENTS][self._mac][API_CLIENT_HOSTNAME]
 
     @property
-    def ip_address(self) -> str:
+    def ip_address(self) -> str | None:
         """Return the ip address."""
-        return (
-            self.coordinator.data[KEY_SYS_CLIENTS][self._mac][API_CLIENT_IP]
-            if self.is_connected
-            else None
-        )
+        if not self.is_connected:
+            return None
+        return self.coordinator.data[KEY_SYS_CLIENTS][self._mac][API_CLIENT_IP]
 
     @property
     def is_connected(self) -> bool:
         """Return true if the device is connected to the network."""
         return self._mac in self.coordinator.data[KEY_SYS_CLIENTS]
-
-    @property
-    def source_type(self) -> SourceType:
-        """Return the source type."""
-        return SourceType.ROUTER
